@@ -9,7 +9,7 @@ import abc
 import asyncio
 import inspect
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Final, Literal, NotRequired, TypeAlias
@@ -149,6 +149,15 @@ class FileInfo(TypedDict):
 
     modified_at: NotRequired[str]
     """ISO 8601 timestamp of last modification, if known."""
+
+    metadata: NotRequired[Mapping[str, Any]]
+    """Free-form, backend-supplied metadata for this entry.
+
+    A backend may attach arbitrary key/value pairs that don't fit the fields
+    above (e.g. a stable id, content type, or revision). When present, the `ls`
+    tool surfaces them inline as `path (key=value, ...)` so an agent sees them
+    without a second lookup; backends that don't set it render as the bare path.
+    """
 
 
 class GrepMatch(TypedDict):

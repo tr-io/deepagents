@@ -28,7 +28,7 @@ from pydantic import Field
 
 import deepagents.middleware.filesystem as filesystem_middleware
 from deepagents.backends import CompositeBackend, FilesystemBackend
-from deepagents.backends.protocol import BackendProtocol, ExecuteResponse, SandboxBackendProtocol
+from deepagents.backends.protocol import BackendProtocol, ExecuteResponse, LsResult, SandboxBackendProtocol
 from deepagents.backends.state import StateBackend
 from deepagents.backends.store import StoreBackend
 from deepagents.backends.utils import TOOL_RESULT_TOKEN_LIMIT, create_file_data
@@ -338,6 +338,53 @@ class TestDeepAgentEndToEnd:
         # Verify ls tool was called
         tool_messages = [msg for msg in result["messages"] if msg.type == "tool"]
         assert len(tool_messages) > 0
+
+    def test_ls_tool_surfaces_backend_metadata(self) -> None:
+        """A backend that tags ls entries with `metadata` surfaces it in ls output.
+
+        Mirrors how a VFS-style backend attaches a backing document id to each
+        entry so the agent can reference it without a second lookup.
+        """
+
+        class _MetadataStateBackend(StateBackend):
+            """StateBackend that tags each ls entry with a backend-supplied id."""
+
+            def ls(self, path: str) -> LsResult:
+                result = super().ls(path)
+                for entry in result.entries:
+                    entry["metadata"] = {"id": "doc-42"}
+                return result
+
+        backend = _MetadataStateBackend()
+        starter_files = prepopulate_file(backend, "/report.pdf", "hello")
+
+        model = FixedGenericFakeChatModel(
+            messages=iter(
+                [
+                    AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "name": "ls",
+                                "args": {"path": "/"},
+                                "id": "call_1",
+                                "type": "tool_call",
+                            }
+                        ],
+                    ),
+                    AIMessage(content="Listed the files."),
+                ]
+            )
+        )
+
+        agent = create_deep_agent(model=model, backend=backend)
+        invoke_input: dict[str, Any] = {"messages": [HumanMessage(content="List files")]}
+        if starter_files:
+            invoke_input["files"] = starter_files
+        result = agent.invoke(invoke_input)
+
+        tool_messages = [msg for msg in result["messages"] if msg.type == "tool"]
+        assert any("/report.pdf (id=doc-42)" in msg.content for msg in tool_messages)
 
     def test_deep_agent_with_fake_llm_multiple_tool_calls(self) -> None:
         """Test deepagent with multiple tool calls using a fake LLM model.
