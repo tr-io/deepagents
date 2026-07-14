@@ -499,13 +499,29 @@ def _format_grep_tool_result(
     return formatted, "success"
 
 
+def _render_ls_entry(info: FileInfo) -> str:
+    """Render an ls entry as its path, with any backend metadata appended.
+
+    Backends may attach a `metadata` mapping to a `FileInfo` (e.g. a backing
+    document id). When present it is surfaced inline as `<path> (key=value, ...)`
+    so callers see it without a second lookup. Entries without metadata render as
+    the bare path, so output is unchanged for backends that don't set it.
+    """
+    path = info.get("path", "")
+    metadata = info.get("metadata")
+    if not metadata:
+        return path
+    rendered = ", ".join(f"{key}={value}" for key, value in metadata.items())
+    return f"{path} ({rendered})"
+
+
 def _apply_permissions_to_ls_results(
     rules: list[FilesystemPermission],
     entries: list[FileInfo],
 ) -> list[str]:
-    """Filter ls entries by permission and return their paths."""
+    """Filter ls entries by permission and render each as path + any metadata."""
     filtered_entries = _filter_file_infos_by_permission(rules, entries, operation="read")
-    return [fi.get("path", "") for fi in filtered_entries]
+    return [_render_ls_entry(fi) for fi in filtered_entries]
 
 
 def _apply_permissions_to_glob_results(
